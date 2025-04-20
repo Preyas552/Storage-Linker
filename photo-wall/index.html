@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Photo Wall – Upload</title>
+<style>
+ body { font-family: sans-serif; margin: 3rem; max-width: 400px }
+ #status { margin-top: 1rem }
+</style>
+</head>
+
+<body>
+<h2>Upload a photo</h2>
+
+<input id="fileInput" type="file" accept="image/*" />
+<button id="uploadBtn" disabled>Upload</button>
+<div id="status"></div>
+
+<script>
+const API = "https://YOUR-API-ID.execute-api.us-east-1.amazonaws.com/dev/presign"; // ①
+
+const $file   = document.getElementById("fileInput");
+const $btn    = document.getElementById("uploadBtn");
+const $status = document.getElementById("status");
+
+$file.onchange = () => {                       // enable button once a file is picked
+  $btn.disabled = !$file.files.length;
+};
+
+$btn.onclick = async () => {
+  const file = $file.files[0];
+  if (!file) return;
+
+  $status.textContent = "Requesting upload URL…";
+
+  /* 1 ▶ get presigned URL */
+  const res  = await fetch(API, { method: "POST" });
+  if (!res.ok) { $status.textContent = "Presign failed"; return; }
+  const { uploadUrl } = await res.json();
+
+  /* 2 ▶ PUT file directly to S3 */
+  const put = await fetch(uploadUrl, {
+      method: "PUT",
+      headers: { "Content-Type": "image/jpeg" },
+      body: file
+  });
+
+  if (put.ok) $status.textContent = "✅ Uploaded!";
+  else        $status.textContent = "❌ Upload failed: " + put.status;
+};
+</script>
+</body>
+</html>

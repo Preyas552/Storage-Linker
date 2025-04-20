@@ -1,0 +1,132 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  photo-wall-api
+
+Parameters:
+  StageName:
+    Type: String
+    Default: dev
+
+Globals:
+  Function:
+    Timeout: 10
+    Runtime: python3.12
+    Architectures: [arm64]
+    MemorySize: 128
+    Tracing: Active
+    LoggingConfig:
+      LogFormat: JSON
+  Api:
+    TracingEnabled: true
+
+Resources:
+
+  RawBucket:
+    Type: AWS::S3::Bucket
+    DependsOn: 
+      - RawUploadInvokePermission
+    Properties:
+      BucketName: !Sub photo-raw-${StageName}-${AWS::AccountId}
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: IntelligentTieringRule
+            Status: Enabled
+            Prefix: ""
+            Transitions:
+              - StorageClass: INTELLIGENT_TIERING
+                TransitionInDays: 30
+      CorsConfiguration:
+        CorsRules:
+          - AllowedMethods: [PUT, GET]
+            AllowedOrigins: ['*']
+            AllowedHeaders: ['*']
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:*
+            Function: !GetAtt ProcessFunction.Arn
+          
+  ThumbBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub photo-thumb-${StageName}-${AWS::AccountId}
+
+  PhotosTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: photo-wall-photos
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: ts
+          AttributeType: N
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+        - AttributeName: ts
+          KeyType: RANGE
+
+  PresignFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/presign/
+      Handler: app.lambda_handler
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: 
+                - s3:PutObject
+              Resource: !Sub "arn:aws:s3:::photo-raw-${StageName}-${AWS::AccountId}/*"
+      Environment:
+        Variables:
+          RAW_BUCKET: !Sub "photo-raw-${StageName}-${AWS::AccountId}"
+      Events:
+        PresignApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref PhotoAPI
+            Path: /presign
+            Method: POST
+
+  ProcessFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/process/
+      Handler: app.lambda_handler
+
+      # ⬇︎  NO Ref RawBucket / ThumbBucket here — use literal strings
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: s3:GetObject
+              Resource: !Sub "arn:aws:s3:::photo-raw-${StageName}-${AWS::AccountId}/*"
+            - Effect: Allow
+              Action: s3:PutObject
+              Resource: !Sub "arn:aws:s3:::photo-thumb-${StageName}-${AWS::AccountId}/*"
+            - Effect: Allow
+              Action: dynamodb:PutItem
+              Resource: !GetAtt PhotosTable.Arn     # still safe; DynamoDB ref isn’t part of the loop
+      PackageType: Zip 
+
+      Environment:
+        Variables:
+          RAW_BUCKET:    !Sub "photo-raw-${StageName}-${AWS::AccountId}"
+          THUMB_BUCKET:  !Sub "photo-thumb-${StageName}-${AWS::AccountId}"
+          PHOTOS_TABLE:  !Ref PhotosTable          # DynamoDB ref is fine
+
+  PhotoAPI:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: photo-wall-rest
+      StageName: !Ref StageName
+
+  RawUploadInvokePermission:                         # separate resource
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ProcessFunction
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceArn: !Sub "arn:aws:s3:::photo-raw-${StageName}-${AWS::AccountId}"
