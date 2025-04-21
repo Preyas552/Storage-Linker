@@ -1,53 +1,45 @@
+<!-- index.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<title>Photo Wall – Upload</title>
-<style>
- body { font-family: sans-serif; margin: 3rem; max-width: 400px }
- #status { margin-top: 1rem }
-</style>
+  <meta charset="UTF-8" />
+  <title>Photo Uploader</title>
 </head>
-
 <body>
-<h2>Upload a photo</h2>
+  <h1>Upload a Photo</h1>
+  <input type="file" id="fileInput" accept="image/*"/>
+  <button id="uploadBtn">Upload</button>
+  <p id="status"></p>
 
-<input id="fileInput" type="file" accept="image/*" />
-<button id="uploadBtn" disabled>Upload</button>
-<div id="status"></div>
+  <script>
+    const API = "https://injfqatbp6.execute-api.us-east-1.amazonaws.com/dev";
 
-<script>
-const API = "https://YOUR-API-ID.execute-api.us-east-1.amazonaws.com/dev/presign"; // ①
+    document.getElementById("uploadBtn").onclick = async () => {
+      const file = document.getElementById("fileInput").files[0];
+      if (!file) return alert("Pick a file first!");
 
-const $file   = document.getElementById("fileInput");
-const $btn    = document.getElementById("uploadBtn");
-const $status = document.getElementById("status");
+      document.getElementById("status").textContent = "Requesting upload URL…";
 
-$file.onchange = () => {                       // enable button once a file is picked
-  $btn.disabled = !$file.files.length;
-};
+      // 1) get presigned URL + key  
+      const res = await fetch(`${API}/presign`, { method: "POST" });
+      const { uploadUrl, key } = await res.json();
+      
+      document.getElementById("status").textContent = "Uploading…";
 
-$btn.onclick = async () => {
-  const file = $file.files[0];
-  if (!file) return;
+      // 2) PUT the file into S3
+      await fetch(uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": file.type },
+        body: file
+      });
 
-  $status.textContent = "Requesting upload URL…";
-
-  /* 1 ▶ get presigned URL */
-  const res  = await fetch(API, { method: "POST" });
-  if (!res.ok) { $status.textContent = "Presign failed"; return; }
-  const { uploadUrl } = await res.json();
-
-  /* 2 ▶ PUT file directly to S3 */
-  const put = await fetch(uploadUrl, {
-      method: "PUT",
-      headers: { "Content-Type": "image/jpeg" },
-      body: file
-  });
-
-  if (put.ok) $status.textContent = "✅ Uploaded!";
-  else        $status.textContent = "❌ Upload failed: " + put.status;
-};
-</script>
+      document.getElementById("status").innerHTML = `
+        ✅ File uploaded!<br>
+        S3 Key: <code>${key}</code><br>
+        <img src="https://photo-raw-dev-533267320522.s3.amazonaws.com/${key}" 
+             style="max-width:300px; margin-top:1em">
+      `;
+    };
+  </script>
 </body>
 </html>

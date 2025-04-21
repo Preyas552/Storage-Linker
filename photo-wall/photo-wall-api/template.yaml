@@ -24,8 +24,8 @@ Resources:
 
   RawBucket:
     Type: AWS::S3::Bucket
-    DependsOn: 
-      - RawUploadInvokePermission
+    # DependsOn: 
+    #   - RawUploadInvokePermission
     Properties:
       BucketName: !Sub photo-raw-${StageName}-${AWS::AccountId}
       VersioningConfiguration:
@@ -48,10 +48,10 @@ Resources:
           - Event: s3:ObjectCreated:*
             Function: !GetAtt ProcessFunction.Arn
           
-  ThumbBucket:
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: !Sub photo-thumb-${StageName}-${AWS::AccountId}
+  # ThumbBucket:
+  #   Type: AWS::S3::Bucket
+  #   Properties:
+  #     BucketName: !Sub photo-thumb-${StageName}-${AWS::AccountId}
 
   PhotosTable:
     Type: AWS::DynamoDB::Table
@@ -91,42 +91,46 @@ Resources:
             Path: /presign
             Method: POST
 
-  ProcessFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: src/process/
-      Handler: app.lambda_handler
+  # ProcessFunction:
+  #   Type: AWS::Serverless::Function
+  #   Properties:
+  #     CodeUri: src/process/
+  #     Handler: app.lambda_handler
 
-      # ⬇︎  NO Ref RawBucket / ThumbBucket here — use literal strings
-      Policies:
-        - Statement:
-            - Effect: Allow
-              Action: s3:GetObject
-              Resource: !Sub "arn:aws:s3:::photo-raw-${StageName}-${AWS::AccountId}/*"
-            - Effect: Allow
-              Action: s3:PutObject
-              Resource: !Sub "arn:aws:s3:::photo-thumb-${StageName}-${AWS::AccountId}/*"
-            - Effect: Allow
-              Action: dynamodb:PutItem
-              Resource: !GetAtt PhotosTable.Arn     # still safe; DynamoDB ref isn’t part of the loop
-      PackageType: Zip 
+  #     # ⬇︎  NO Ref RawBucket / ThumbBucket here — use literal strings
+  #     Policies:
+  #       - Statement:
+  #           - Effect: Allow
+  #             Action: s3:GetObject
+  #             Resource: !Sub "arn:aws:s3:::photo-raw-${StageName}-${AWS::AccountId}/*"
+  #           - Effect: Allow
+  #             Action: s3:PutObject
+  #             Resource: !Sub "arn:aws:s3:::photo-thumb-${StageName}-${AWS::AccountId}/*"
+  #           - Effect: Allow
+  #             Action: dynamodb:PutItem
+  #             Resource: !GetAtt PhotosTable.Arn     # still safe; DynamoDB ref isn’t part of the loop
+  #     PackageType: Zip 
 
-      Environment:
-        Variables:
-          RAW_BUCKET:    !Sub "photo-raw-${StageName}-${AWS::AccountId}"
-          THUMB_BUCKET:  !Sub "photo-thumb-${StageName}-${AWS::AccountId}"
-          PHOTOS_TABLE:  !Ref PhotosTable          # DynamoDB ref is fine
+  #     Environment:
+  #       Variables:
+  #         RAW_BUCKET:    !Sub "photo-raw-${StageName}-${AWS::AccountId}"
+  #         THUMB_BUCKET:  !Sub "photo-thumb-${StageName}-${AWS::AccountId}"
+  #         PHOTOS_TABLE:  !Ref PhotosTable          # DynamoDB ref is fine
 
   PhotoAPI:
     Type: AWS::Serverless::Api
     Properties:
       Name: photo-wall-rest
       StageName: !Ref StageName
+      Cors:
+        AllowMethods: "'OPTIONS,POST'"
+        AllowHeaders: "'Content-Type'"
+        AllowOrigins: "'*'"
 
-  RawUploadInvokePermission:                         # separate resource
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !Ref ProcessFunction
-      Action: lambda:InvokeFunction
-      Principal: s3.amazonaws.com
-      SourceArn: !Sub "arn:aws:s3:::photo-raw-${StageName}-${AWS::AccountId}"
+  # RawUploadInvokePermission:                         # separate resource
+  #   Type: AWS::Lambda::Permission
+  #   Properties:
+  #     FunctionName: !Ref ProcessFunction
+  #     Action: lambda:InvokeFunction
+  #     Principal: s3.amazonaws.com
+  #     SourceArn: !Sub "arn:aws:s3:::photo-raw-${StageName}-${AWS::AccountId}"
